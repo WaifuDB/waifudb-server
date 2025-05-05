@@ -8,7 +8,7 @@ const characterColumns = [
     'name', 'jp_name',
     'age', 'image_url',
     'birth_place', 'birth_date',
-    'height', 'weight',
+    'height', 'weight', 'cup_size', 'blood_type',
     'bust', 'waist', 'hip',
     'description'
 ];
@@ -66,12 +66,6 @@ router.post('/create', async function (req, res, next) {
             return acc;
         }, {});
 
-        const character = await query(
-            'INSERT INTO characters (' + characterColumns.join(', ') + ') VALUES (' + characterColumns.map(() => '?').join(', ') + ') RETURNING ' + characterColumnsWithId.join(', '),
-            [...characterColumns.map(column => characterData[column])]
-        );
-
-        // Check for source
         let source = await getSourceByName(req.body.source);
         let sourceId = null;
         if (!source) {
@@ -81,9 +75,17 @@ router.post('/create', async function (req, res, next) {
                 [req.body.source]
             );
             sourceId = source[0].id;
+        }else{
+            sourceId = source.id;
         }
 
-        sourceId = source.id;
+
+        const character = await query(
+            'INSERT INTO characters (' + characterColumns.join(', ') + ') VALUES (' + characterColumns.map(() => '?').join(', ') + ') RETURNING ' + characterColumnsWithId.join(', '),
+            [...characterColumns.map(column => characterData[column])]
+        );
+
+        // Check for source
 
         await query(
             'INSERT INTO character_sources (character_id, source_id) VALUES (?, ?)',
