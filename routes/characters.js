@@ -23,8 +23,8 @@ router.post('/create', async function (req, res, next) {
     // const { name} = req.body;
     const { user_id, token } = req.body;
 
-    try{
-        if(!await validateToken(user_id, token)){
+    try {
+        if (!await validateToken(user_id, token)) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
@@ -40,7 +40,7 @@ router.post('/create', async function (req, res, next) {
         if (!hasPermission) {
             return res.status(403).json({ error: 'Forbidden' });
         }
-    }catch(err){
+    } catch (err) {
         console.log(err);
         return res.status(500).json({ error: err.message });
     }
@@ -94,6 +94,84 @@ router.post('/create', async function (req, res, next) {
         const completedCharacter = await getCharacterById(character[0].id);
 
         res.status(201).json(completedCharacter);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/edit', async function (req, res, next) {
+    const { user_id, token } = req.body;
+    try {
+        if (!await validateToken(user_id, token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //get user roles
+        const user = await getUser(user_id);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //check if user has permission to edit characters
+        const hasPermission = user.roles.some(role => role.can_create);
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ error: err.message });
+    }
+
+    try {
+        const { id } = req.body;
+        if (!id) {
+            return res.status(400).json({ error: 'ID is required' });
+        }
+
+        const characterData = characterColumns.reduce((acc, column) => {
+            if (req.body[column] !== undefined) {
+                acc[column] = req.body[column];
+                //if string and length 0, nullify it
+                if (typeof acc[column] === 'string' && acc[column].length === 0) {
+                    acc[column] = null;
+                }
+            }
+            return acc;
+        }, {});
+
+        await query(
+            'UPDATE characters SET ' + characterColumns.map(column => `${column} = ?`).join(', ') + ' WHERE id = ?',
+            [...characterColumns.map(column => characterData[column]), id]
+        );
+
+        //Check for source
+        let sourceId = null;
+        if (req.body.source) {
+            let source = await getSourceByName(req.body.source);
+            if (!source) {
+                //create source if it doesn't exist
+                source = await query(
+                    'INSERT INTO sources (name) VALUES (?) RETURNING id',
+                    [req.body.source]
+                );
+                sourceId = source[0].id;
+            } else {
+                sourceId = source.id;
+            }
+
+            await query(
+                //mariadb
+                'INSERT INTO character_sources (character_id, source_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE source_id = ?',
+                [id, sourceId, sourceId]
+            );
+        }
+
+        //Pull the character again (extra call, but reusable function that returns everything)
+        const completedCharacter = await getCharacterById(id);
+
+        res.status(200).json(completedCharacter);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });

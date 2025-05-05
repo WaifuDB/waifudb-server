@@ -9,12 +9,29 @@ async function getSourceByName(name){
     return source[0];
 }
 
+async function getSourceCharacters(id){
+    const characters = await query(
+        'SELECT characters.* FROM characters INNER JOIN character_sources ON characters.id = character_sources.character_id WHERE character_sources.source_id = ?',
+        [id]
+    );
+    return characters;
+}
+
 module.exports.getSourceById = getSourceById;
 async function getSourceById(id){
     const source = await query(
         'SELECT * FROM sources WHERE id = ?',
         [id]
     );
+
+    if (source.length === 0) {
+        return null;
+    }
+
+    const sourceCharacters = await getSourceCharacters(id);
+    const sourceWithCharacters = source[0];
+    sourceWithCharacters.characters = sourceCharacters; //map characters to source object
+
     return source[0];
 }
 
