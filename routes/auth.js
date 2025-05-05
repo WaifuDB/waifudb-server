@@ -2,7 +2,7 @@ var express = require('express');
 const { query } = require('../src/db');
 var router = express.Router();
 const bcrypt = require('bcrypt');
-const { authenticate, getUser } = require('../src/auth');
+const { getUser, validateToken } = require('../src/auth');
 const crypto = require('crypto');
 
 const saltRounds = 10;
@@ -112,20 +112,9 @@ router.post('/profile', async (req, res) => {
         return res.status(400).json({ error: 'User ID and token are required' });
     }
     try {
-        const token_res = await query(
-            'SELECT user_id, token FROM sessions WHERE user_id = ? AND token = ?',
-            [user_id, token]
-        );
-
-        if (token_res.length === 0) {
+        if(!(await validateToken(user_id, token))){
             return res.status(401).json({ error: 'Invalid token' });
         }
-
-        //update last_used
-        await query(
-            'UPDATE sessions SET last_used = NOW() WHERE user_id = ? AND token = ?',
-            [user_id, token]
-        );
 
         //get user profile
         const user = await getUser(user_id);

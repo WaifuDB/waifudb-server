@@ -1,10 +1,28 @@
 const { query } = require("./db");
 
-module.exports.authenticate = function (req, res, next) {
-    if (req.session.userId) {
-        return next();
+module.exports.validateToken = async function (user_id, token) {
+    try{
+        //check if token is valid
+        const token_res = await query(
+            'SELECT user_id, token FROM sessions WHERE user_id = ? AND token = ?',
+            [user_id, token]
+        );
+
+        if (token_res.length === 0) {
+            return null;
+        }
+
+        //update last_used
+        await query(
+            'UPDATE sessions SET last_used = NOW() WHERE user_id = ? AND token = ?',
+            [user_id, token]
+        );
+
+        return token_res[0];
+    }catch(err){
+        console.log(err);
+        throw err;
     }
-    res.status(401).json({ error: 'Not authenticated' });
 }
 
 module.exports.getUser = async function (id) {
