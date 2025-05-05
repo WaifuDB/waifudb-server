@@ -9,7 +9,17 @@ router.get('/get/all', async function (req, res, next) {
         if (!sources) {
             return res.status(404).json({ error: 'Sources not found' });
         }
-        res.json(sources);
+
+        // Map the sources to include the characters
+        const sourcesWithCharacters = await Promise.all(sources.map(async (source) => {
+            const characters = await query(
+                'SELECT characters.* FROM characters INNER JOIN character_sources ON characters.id = character_sources.character_id WHERE character_sources.source_id = ?',
+                [source.id]
+            );
+            return { ...source, characters };
+        }));
+
+        res.json(sourcesWithCharacters);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
