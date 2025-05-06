@@ -1,7 +1,8 @@
 var express = require('express');
 const { query } = require('../src/db');
-const { getSourceByName, getCharacterById } = require('../src/character');
+const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, createOrUpdateCharacterRelationship, getCharactersRelationships } = require('../src/character');
 const { validateToken, getUser } = require('../src/auth');
+const { getTagByID, createTag } = require('../src/tags');
 var router = express.Router();
 
 const characterColumns = [
@@ -75,7 +76,7 @@ router.post('/create', async function (req, res, next) {
                 [req.body.source]
             );
             sourceId = source[0].id;
-        }else{
+        } else {
             sourceId = source.id;
         }
 
@@ -196,6 +197,195 @@ router.get('/get/:id', async function (req, res, next) {
         console.error(err);
         res.status(500).json({ error: err.message });
     }
+});
+
+router.post('/tags/add', async function (req, res, next) {
+    const { user_id, token } = req.body;
+    try {
+        if (!await validateToken(user_id, token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //get user roles
+        const user = await getUser(user_id);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //check if user has permission to edit characters
+        const hasPermission = user.roles.some(role => role.can_create);
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ error: err.message });
+    }
+
+    try {
+        const { character_id, tag_id, tag_name, category_id } = req.body;
+
+        if (!character_id) {
+            return res.status(400).json({ error: 'Character ID is required' });
+        }
+
+        if (!category_id) {
+            return res.status(400).json({ error: 'Category ID is required' });
+        }
+
+        //if tag_id is provided, check if it exists and add it to the character
+        //otherwise use tag_name to create a new tag and add it to the character
+        if (tag_id) {
+            let tag = await getTagByID(tag_id);
+            if (!tag) {
+                return res.status(404).json({ error: 'Tag not found' });
+            }
+
+            let addResponse = await addCharacterTag(character_id, tag_id);
+            if (!addResponse) {
+                return res.status(400).json({ error: 'Tag already exists for this character' });
+            }
+
+            return res.status(200).json({ message: 'Tag added to character' });
+        } else if (tag_name) {
+            let tag = await createTag(tag_name, null, null, category_id);
+            if (!tag) {
+                return res.status(400).json({ error: 'Tag already exists' });
+            }
+            let addResponse = await addCharacterTag(character_id, tag.id);
+            if (!addResponse) {
+                return res.status(400).json({ error: 'Tag already exists for this character' });
+            }
+            return res.status(200).json({ message: 'Tag added to character' });
+        } else {
+            return res.status(400).json({ error: 'Tag ID or Tag Name is required' });
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/tags/remove', async function (req, res, next) {
+    const { user_id, token } = req.body;
+    try {
+        if (!await validateToken(user_id, token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //get user roles
+        const user = await getUser(user_id);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //check if user has permission to edit characters
+        const hasPermission = user.roles.some(role => role.can_create);
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ error: err.message });
+    }
+
+    try {
+        const { character_id, tag_id } = req.body;
+
+        if (!character_id) {
+            return res.status(400).json({ error: 'Character ID is required' });
+        }
+
+        //if tag_id is provided, check if it exists and add it to the character
+        //otherwise use tag_name to create a new tag and add it to the character
+        if (tag_id) {
+            let tag = await getTagByID(tag_id);
+            if (!tag) {
+                return res.status(404).json({ error: 'Tag not found' });
+            }
+
+            let removeResponse = await removeCharacterTag(character_id, tag_id);
+            if (!removeResponse) {
+                return res.status(400).json({ error: 'Tag does not exist for this character' });
+            }
+
+            return res.status(200).json({ message: 'Tag removed from character' });
+        } else {
+            return res.status(400).json({ error: 'Tag ID is required' });
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/relationships/update', async function (req, res, next) {
+    const { user_id, token } = req.body;
+    try {
+        if (!await validateToken(user_id, token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //get user roles
+        const user = await getUser(user_id);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //check if user has permission to edit characters
+        const hasPermission = user.roles.some(role => role.can_create);
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ error: err.message });
+    }
+
+    const { relationships } = req.body;
+    if (!relationships || !Array.isArray(relationships)) {
+        return res.status(400).json({ error: 'Invalid relationships data' });
+    }
+
+    try {
+        let addedRelationships = [];
+        for await (const relationship of relationships) {
+            const created = await createOrUpdateCharacterRelationship(
+                relationship.id,
+                relationship.character_id1,
+                relationship.character_id2,
+                relationship.relationship_type,
+                relationship.reciprocal_relationship_type
+            );
+            if (created) {
+                addedRelationships.push(created);
+            }
+        }
+
+        //delete relationships that are in the database, but not in the given list
+        const remoteRelationships = await getCharactersRelationships(relationships[0].character_id1, relationships[0].character_id2);
+        const remoteIds = remoteRelationships.map(relationship => relationship.id);
+        const givenIds = relationships.map(relationship => relationship.id);
+
+        const idsToDelete = remoteIds.filter(id => !givenIds.includes(id) && !addedRelationships.some(relationship => relationship.id == id));
+        if(idsToDelete && idsToDelete.length > 0){
+            await query(
+                'DELETE FROM relationships WHERE id IN (' + idsToDelete.map(() => '?').join(', ') + ')',
+                [...idsToDelete]
+            );
+        }
+
+        return res.status(200).json({ message: 'Relationships updated successfully' });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ error: err.message });
+    }
+
+    //return a temp error for now
+    return res.status(500).json({ error: 'Not implemented yet' });
 });
 
 module.exports = router;
