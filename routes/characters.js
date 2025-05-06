@@ -5,7 +5,7 @@ const { validateToken, getUser } = require('../src/auth');
 var router = express.Router();
 
 const characterColumns = [
-    'name', 'jp_name',
+    'name', 'jp_name', 'gender',
     'age', 'image_url',
     'birth_place', 'birth_date',
     'height', 'weight', 'cup_size', 'blood_type',
