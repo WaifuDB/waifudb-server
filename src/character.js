@@ -14,7 +14,15 @@ async function getSourceCharacters(id){
         'SELECT characters.* FROM characters INNER JOIN character_sources ON characters.id = character_sources.character_id WHERE character_sources.source_id = ?',
         [id]
     );
-    return characters;
+
+    let actualCharacters = [];
+    //get them individually to get the relationships etc
+    for await(const character of characters){
+        const characterWithRelationships = await getCharacterById(character.id, true);
+        actualCharacters.push(characterWithRelationships);
+    }
+
+    return actualCharacters;
 }
 
 module.exports.getSourceById = getSourceById;
@@ -71,7 +79,7 @@ async function getCharacterById(id, map_relationships = true){
 module.exports.getCharacterRelationships = getCharacterRelationships;
 async function getCharacterRelationships(characterId){
     const relationships = await query(
-        'SELECT * FROM relationships WHERE character_id1 = ? OR character_id2 = ?',
+        'SELECT * FROM relationships WHERE from_id = ? OR to_id = ?',
         [characterId, characterId]
     );
 
@@ -79,34 +87,32 @@ async function getCharacterRelationships(characterId){
         return null;
     }
 
-    //update result so that character_id1 is always a lower ID than character_id2 (and swap relationship_types accordingly)
     const mappedRelationships = relationships.map((relationship) => {
-        if(relationship.character_id1 > relationship.character_id2){
+        if(relationship.to_id == characterId){
             return {
                 ...relationship,
-                character_id1: relationship.character_id2,
-                character_id2: relationship.character_id1,
+                from_id: relationship.to_id,
+                to_id: relationship.from_id,
                 relationship_type: relationship.reciprocal_relationship_type,
                 reciprocal_relationship_type: relationship.relationship_type,
-            };
-        }else{
-            return relationship;
+            }
         }
+        return relationship;
     })
 
     let characterCache = {};
 
     for await(const relationship of mappedRelationships){
-        if(!characterCache[relationship.character_id1]){
-            if(relationship.character_id1 != characterId){
-                const character = await getCharacterById(relationship.character_id1, false);
-                characterCache[relationship.character_id1] = character;
+        if(!characterCache[relationship.from_id]){
+            if(relationship.from_id != characterId){
+                const character = await getCharacterById(relationship.from_id, false);
+                characterCache[relationship.from_id] = character;
             }
         }
-        if(!characterCache[relationship.character_id2]){
-            if(relationship.character_id2 != characterId){
-                const character = await getCharacterById(relationship.character_id2, false);
-                characterCache[relationship.character_id2] = character;
+        if(!characterCache[relationship.to_id]){
+            if(relationship.to_id != characterId){
+                const character = await getCharacterById(relationship.to_id, false);
+                characterCache[relationship.to_id] = character;
             }
         }
     }
@@ -114,10 +120,10 @@ async function getCharacterRelationships(characterId){
     //add character data to relationships
     for await(const relationship of mappedRelationships){
         let id = null;
-        if(relationship.character_id1 == characterId){
-            id = relationship.character_id2;
+        if(relationship.from_id == characterId){
+            id = relationship.to_id;
         }else{
-            id = relationship.character_id1;
+            id = relationship.from_id;
         }
 
         if(characterCache[id]){
@@ -129,10 +135,10 @@ async function getCharacterRelationships(characterId){
 }
 
 module.exports.getCharactersRelationships = getCharactersRelationships;
-async function getCharactersRelationships(character_id1, character_id2){
+async function getCharactersRelationships(from_id, to_id){
     const relationships = await query(
-        'SELECT * FROM relationships WHERE (character_id1 = ? AND character_id2 = ?) OR (character_id1 = ? AND character_id2 = ?)',
-        [character_id1, character_id2, character_id2, character_id1]
+        'SELECT * FROM relationships WHERE (from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?)',
+        [from_id, to_id, to_id, from_id]
     );
 
     if (relationships.length === 0) {
@@ -143,7 +149,7 @@ async function getCharactersRelationships(character_id1, character_id2){
 }
 
 module.exports.createOrUpdateCharacterRelationship = createOrUpdateCharacterRelationship;
-async function createOrUpdateCharacterRelationship(id, characterId1, characterId2, relationshipType, reciprocalRelationshipType){
+async function createOrUpdateCharacterRelationship(id, from_id, to_id, relationshipType, reciprocalRelationshipType){
     //check if relationship already exists
     const existingRelationship = await query(
         'SELECT * FROM relationships WHERE (id = ?)',
@@ -151,16 +157,16 @@ async function createOrUpdateCharacterRelationship(id, characterId1, characterId
     );
 
     let correctedData = {
-        character_id1: characterId1,
-        character_id2: characterId2,
+        from_id: from_id,
+        to_id: to_id,
         relationship_type: relationshipType,
         reciprocal_relationship_type: reciprocalRelationshipType,
     }
 
     //check if characterId1 is lower than characterId2 and swap if necessary
-    if(characterId1 > characterId2){
-        correctedData.character_id1 = characterId2;
-        correctedData.character_id2 = characterId1;
+    if(from_id > to_id){
+        correctedData.from_id = to_id;
+        correctedData.to_id = from_id;
         correctedData.relationship_type = reciprocalRelationshipType;
         correctedData.reciprocal_relationship_type = relationshipType;
     }
@@ -173,15 +179,15 @@ async function createOrUpdateCharacterRelationship(id, characterId1, characterId
 
         //update existing relationship
         const updatedRelationship = await query(
-            'UPDATE relationships SET relationship_type = ?, reciprocal_relationship_type = ? WHERE id = ?',
-            [relationshipType, reciprocalRelationshipType, existingRelationship[0].id]
+            'UPDATE relationships SET from_id = ?, to_id = ?, relationship_type = ?, reciprocal_relationship_type = ? WHERE id = ?',
+            [from_id, to_id, relationshipType, reciprocalRelationshipType, existingRelationship[0].id]
         );
         return updatedRelationship[0];
     }else{
         //create new relationship
         const newRelationship = await query(
-            'INSERT INTO relationships (character_id1, character_id2, relationship_type, reciprocal_relationship_type) VALUES (?, ?, ?, ?) RETURNING *',
-            [characterId1, characterId2, relationshipType, reciprocalRelationshipType]
+            'INSERT INTO relationships (from_id, to_id, relationship_type, reciprocal_relationship_type) VALUES (?, ?, ?, ?) RETURNING *',
+            [from_id, to_id, relationshipType, reciprocalRelationshipType]
         );
         return newRelationship[0];
     }

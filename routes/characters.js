@@ -1,6 +1,6 @@
 var express = require('express');
 const { query } = require('../src/db');
-const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, createOrUpdateCharacterRelationship, getCharactersRelationships } = require('../src/character');
+const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, createOrUpdateCharacterRelationship, getCharactersRelationships, getCharacterRelationships } = require('../src/character');
 const { validateToken, getUser } = require('../src/auth');
 const { getTagByID, createTag } = require('../src/tags');
 var router = express.Router();
@@ -345,33 +345,38 @@ router.post('/relationships/update', async function (req, res, next) {
         return res.status(500).json({ error: err.message });
     }
 
-    const { relationships } = req.body;
+    const { relationships, target_id } = req.body;
     if (!relationships || !Array.isArray(relationships)) {
         return res.status(400).json({ error: 'Invalid relationships data' });
     }
 
+    if(!target_id) {
+        return res.status(400).json({ error: 'Target ID is required' });
+    }
+
     try {
         let addedRelationships = [];
+        console.log(relationships);
         for await (const relationship of relationships) {
             const created = await createOrUpdateCharacterRelationship(
                 relationship.id,
-                relationship.character_id1,
-                relationship.character_id2,
+                relationship.from_id,
+                relationship.to_id,
                 relationship.relationship_type,
                 relationship.reciprocal_relationship_type
             );
-            if (created) {
-                addedRelationships.push(created);
-            }
+            addedRelationships.push({
+                id: relationship.id || created.id,
+            });
         }
 
         //delete relationships that are in the database, but not in the given list
-        const remoteRelationships = await getCharactersRelationships(relationships[0].character_id1, relationships[0].character_id2);
+        const remoteRelationships = await getCharacterRelationships(target_id);
         const remoteIds = remoteRelationships.map(relationship => relationship.id);
         const givenIds = relationships.map(relationship => relationship.id);
 
         const idsToDelete = remoteIds.filter(id => !givenIds.includes(id) && !addedRelationships.some(relationship => relationship.id == id));
-        if(idsToDelete && idsToDelete.length > 0){
+        if (idsToDelete && idsToDelete.length > 0) {
             await query(
                 'DELETE FROM relationships WHERE id IN (' + idsToDelete.map(() => '?').join(', ') + ')',
                 [...idsToDelete]
