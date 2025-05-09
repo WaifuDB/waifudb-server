@@ -363,7 +363,8 @@ router.post('/relationships/update', async function (req, res, next) {
                 relationship.from_id,
                 relationship.to_id,
                 relationship.relationship_type,
-                relationship.reciprocal_relationship_type
+                relationship.reciprocal_relationship_type,
+                relationship.visualize
             );
             addedRelationships.push({
                 id: relationship.id || created.id,

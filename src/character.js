@@ -149,18 +149,21 @@ async function getCharactersRelationships(from_id, to_id){
 }
 
 module.exports.createOrUpdateCharacterRelationship = createOrUpdateCharacterRelationship;
-async function createOrUpdateCharacterRelationship(id, from_id, to_id, relationshipType, reciprocalRelationshipType){
+async function createOrUpdateCharacterRelationship(id, from_id, to_id, relationshipType, reciprocalRelationshipType, visualize){
     //check if relationship already exists
     const existingRelationship = await query(
         'SELECT * FROM relationships WHERE (id = ?)',
         [id]
     );
 
+    visualize = visualize ? 1 : 0; //convert to int
+
     let correctedData = {
         from_id: from_id,
         to_id: to_id,
         relationship_type: relationshipType,
         reciprocal_relationship_type: reciprocalRelationshipType,
+        visualize: visualize,
     }
 
     //check if characterId1 is lower than characterId2 and swap if necessary
@@ -169,25 +172,26 @@ async function createOrUpdateCharacterRelationship(id, from_id, to_id, relations
         correctedData.to_id = from_id;
         correctedData.relationship_type = reciprocalRelationshipType;
         correctedData.reciprocal_relationship_type = relationshipType;
+        correctedData.visualize = visualize;
     }
 
     if(existingRelationship.length > 0){
         //check if relationship already exists and is the same
-        if(existingRelationship[0].relationship_type === relationshipType && existingRelationship[0].reciprocal_relationship_type === reciprocalRelationshipType){
+        if(existingRelationship[0].relationship_type === relationshipType && existingRelationship[0].reciprocal_relationship_type === reciprocalRelationshipType && existingRelationship[0].visualize === visualize){
             return null; //relationship already exists and is the same
         }
 
         //update existing relationship
         const updatedRelationship = await query(
-            'UPDATE relationships SET from_id = ?, to_id = ?, relationship_type = ?, reciprocal_relationship_type = ? WHERE id = ?',
-            [from_id, to_id, relationshipType, reciprocalRelationshipType, existingRelationship[0].id]
+            'UPDATE relationships SET from_id = ?, to_id = ?, relationship_type = ?, reciprocal_relationship_type = ?, visualize = ? WHERE id = ?',
+            [from_id, to_id, relationshipType, reciprocalRelationshipType, visualize, existingRelationship[0].id]
         );
         return updatedRelationship[0];
     }else{
         //create new relationship
         const newRelationship = await query(
-            'INSERT INTO relationships (from_id, to_id, relationship_type, reciprocal_relationship_type) VALUES (?, ?, ?, ?) RETURNING *',
-            [from_id, to_id, relationshipType, reciprocalRelationshipType]
+            'INSERT INTO relationships (from_id, to_id, relationship_type, reciprocal_relationship_type, visualize) VALUES (?, ?, ?, ?, ?) RETURNING *',
+            [from_id, to_id, relationshipType, reciprocalRelationshipType, visualize]
         );
         return newRelationship[0];
     }
