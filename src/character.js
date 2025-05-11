@@ -1,4 +1,5 @@
 const { query } = require("./db");
+const { getCharacterImages, getSourceImages } = require("./images");
 
 module.exports.getSourceByName = getSourceByName;
 async function getSourceByName(name){
@@ -40,6 +41,11 @@ async function getSourceById(id){
     const sourceWithCharacters = source[0];
     sourceWithCharacters.characters = sourceCharacters; //map characters to source object
 
+    //get images for the source
+    const sourceImages = await getSourceImages(id);
+    sourceWithCharacters.images = sourceImages;
+
+
     return source[0];
 }
 
@@ -50,6 +56,19 @@ async function getCharacterSources(characterId){
         [characterId]
     );
     return sources;
+}
+
+module.exports.getCharacters = getCharacters;
+async function getCharacters(){
+    const characters = await query(
+        'SELECT * FROM characters'
+    );
+
+    if (characters.length === 0) {
+        return null;
+    }
+
+    return characters;
 }
 
 module.exports.getCharacterById = getCharacterById;
@@ -72,6 +91,7 @@ async function getCharacterById(id, map_relationships = true){
     if(map_relationships){
         _character.relationships = (await getCharacterRelationships(id)) || [];
     }
+    _character.images = (await getCharacterImages(id)) || [];
 
     return character[0];
 }

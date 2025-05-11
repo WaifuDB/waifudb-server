@@ -15,6 +15,7 @@ var authRouter = require('./routes/auth');
 var charactersRouter = require('./routes/characters');
 var sourcesRouter = require('./routes/sources');
 var tagsRouter = require('./routes/tags');
+var imagesRouter = require('./routes/images');
 
 var app = express();
 
@@ -56,6 +57,7 @@ app.use('/auth', authRouter);
 app.use('/characters', charactersRouter);
 app.use('/sources', sourcesRouter);
 app.use('/tags', tagsRouter);
+app.use('/images', imagesRouter);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

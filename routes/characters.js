@@ -1,6 +1,6 @@
 var express = require('express');
 const { query } = require('../src/db');
-const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, createOrUpdateCharacterRelationship, getCharactersRelationships, getCharacterRelationships } = require('../src/character');
+const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, createOrUpdateCharacterRelationship, getCharactersRelationships, getCharacterRelationships, getCharacters } = require('../src/character');
 const { validateToken, getUser } = require('../src/auth');
 const { getTagByID, createTag } = require('../src/tags');
 var router = express.Router();
@@ -175,6 +175,16 @@ router.post('/edit', async function (req, res, next) {
         const completedCharacter = await getCharacterById(id);
 
         res.status(200).json(completedCharacter);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/get/all', async function (req, res, next) {
+    try {
+        const characters = await getCharacters();
+        res.json(characters);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
