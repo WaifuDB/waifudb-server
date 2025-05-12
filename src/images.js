@@ -1,4 +1,6 @@
+const { default: axios } = require("axios");
 const { query } = require("./db");
+require('dotenv').config();
 
 module.exports.addCharactersToImage = addCharactersToImage
 async function addCharactersToImage(imageId, characterIds) {
@@ -67,5 +69,39 @@ async function getSourceImages(sourceId) {
         return images;
     } catch (err) {
         throw err;
+    }
+}
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+module.exports.uploadImageToPicsur = uploadImageToPicsur;
+async function uploadImageToPicsur(file, blob) {
+    // Validate the image type
+    if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+        throw new Error('Invalid image type');
+    }
+
+    const url = `${process.env.PICSUR_API_URL}/api/image/upload`;
+    const formData = new FormData();
+    formData.append('image', blob, file.originalname);
+
+    const headers = {
+        'Authorization': `Api-Key ${process.env.PICSUR_API_KEY}`,
+    };
+
+    try {
+        const response = await axios.post(url, formData, {
+            headers: {
+                ...headers,
+            },
+        });
+
+        //log headers
+        console.log('Response Headers:', response.headers);
+
+        return response.data;
+    } catch (error) {
+        console.error('Error uploading image to Picsur:', error.response ? error.response.data : error.message);
+        throw error;
     }
 }

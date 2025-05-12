@@ -3,11 +3,15 @@ const { query } = require('../src/db');
 const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, createOrUpdateCharacterRelationship, getCharactersRelationships, getCharacterRelationships, getCharacters } = require('../src/character');
 const { validateToken, getUser } = require('../src/auth');
 const { getTagByID, createTag } = require('../src/tags');
+const multer = require('multer');
+const { uploadImageToPicsur } = require('../src/images');
 var router = express.Router();
+var storage = multer.memoryStorage();
+var upload = multer({ storage: storage });
 
 const characterColumns = [
     'name', 'jp_name', 'gender',
-    'age', 'image_url',
+    'age', 'remote_image_id',
     'birth_place', 'birth_date',
     'height', 'weight', 'cup_size', 'blood_type',
     'bust', 'waist', 'hip',
@@ -21,7 +25,6 @@ const characterColumnsWithId = [
 const minMaxLength = [3, 50];
 
 router.post('/create', async function (req, res, next) {
-    // const { name} = req.body;
     const { user_id, token } = req.body;
 
     try {
@@ -55,6 +58,9 @@ router.post('/create', async function (req, res, next) {
             return res.status(400).json({ error: `Name must be between ${minMaxLength[0]} and ${minMaxLength[1]} characters` });
         }
 
+
+        let charaData = req.body;
+
         //The rest is optional
         const characterData = characterColumns.reduce((acc, column) => {
             if (req.body[column] !== undefined) {
@@ -80,14 +86,17 @@ router.post('/create', async function (req, res, next) {
             sourceId = source.id;
         }
 
-
         const character = await query(
             'INSERT INTO characters (' + characterColumns.join(', ') + ') VALUES (' + characterColumns.map(() => '?').join(', ') + ') RETURNING ' + characterColumnsWithId.join(', '),
             [...characterColumns.map(column => characterData[column])]
         );
 
-        // Check for source
+        if (!character || character.length === 0) {
+            return res.status(500).json({ error: 'Failed to create character' });
+        }
 
+
+        // Check for source
         await query(
             'INSERT INTO character_sources (character_id, source_id) VALUES (?, ?)',
             [character[0].id, sourceId]
@@ -144,9 +153,15 @@ router.post('/edit', async function (req, res, next) {
             return acc;
         }, {});
 
+        // Remove the remote_image_id from data (it's updated elsewhere, if included it would wipe the value)
+        let adjustedColumns = characterColumns.filter(column => column !== 'remote_image_id');
+        if(characterData.remote_image_id){
+            adjustedColumns.push('remote_image_id');
+        }
+
         await query(
-            'UPDATE characters SET ' + characterColumns.map(column => `${column} = ?`).join(', ') + ' WHERE id = ?',
-            [...characterColumns.map(column => characterData[column]), id]
+            'UPDATE characters SET ' + adjustedColumns.map(column => `${column} = ?`).join(', ') + ' WHERE id = ?',
+            [...adjustedColumns.map(column => characterData[column]), id]
         );
 
         //Check for source
@@ -176,6 +191,73 @@ router.post('/edit', async function (req, res, next) {
 
         res.status(200).json(completedCharacter);
     } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/edit/image', upload.single('image'), async function (req, res, next) {
+    const { user_id, token } = req.body;
+    try {
+        if (!await validateToken(user_id, token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //get user roles
+        const user = await getUser(user_id);
+
+        if (!user) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        //check if user has permission to edit characters
+        const hasPermission = user.roles.some(role => role.can_create);
+        if (!hasPermission) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    } catch (err) {
+        console.log(err);
+        return res.status(500).json({ error: err.message });
+    }
+
+    try{
+        const { id } = req.body;
+        const image = req.file;
+
+        if (!id) {
+            return res.status(400).json({ error: 'Character ID is required' });
+        }
+
+        if (!image) {
+            return res.status(400).json({ error: 'Image is required' });
+        }
+
+        //validate character
+        const character = await getCharacterById(id);
+        if (!character) {
+            return res.status(404).json({ error: 'Character not found' });
+        }
+
+        // Upload image to Picsur
+        const image_blob = new Blob([image.buffer], { type: image.mimetype });
+        const uploadResponse = await uploadImageToPicsur(image, image_blob);
+        if (uploadResponse && uploadResponse.success && uploadResponse.data && uploadResponse.data.id) {
+            const image_id = uploadResponse.data.id;
+
+            // Update character with new image ID
+            await query(
+                'UPDATE characters SET remote_image_id = ? WHERE id = ?',
+                [image_id, id]
+            );
+
+            // Pull the character again (extra call, but reusable function that returns everything)
+            const completedCharacter = await getCharacterById(id);
+
+            return res.status(200).json(completedCharacter);
+        } else {
+            return res.status(500).json({ error: 'Failed to upload image' });
+        }
+    }catch(err){
         console.error(err);
         res.status(500).json({ error: err.message });
     }
@@ -360,7 +442,7 @@ router.post('/relationships/update', async function (req, res, next) {
         return res.status(400).json({ error: 'Invalid relationships data' });
     }
 
-    if(!target_id) {
+    if (!target_id) {
         return res.status(400).json({ error: 'Target ID is required' });
     }
 
