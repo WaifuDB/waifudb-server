@@ -105,3 +105,26 @@ async function uploadImageToPicsur(file, blob) {
         throw error;
     }
 }
+
+module.exports.removeImageFromPicsur = removeImageFromPicsur;
+async function removeImageFromPicsur(imageId) {
+    const url = `${process.env.PICSUR_API_URL}/api/image/delete`;
+    const body = {
+        ids: [imageId],
+    }
+    const headers = {
+        'Authorization': `Api-Key ${process.env.PICSUR_API_KEY}`,
+    };
+    try {
+        const response = await axios.post(url, body, {
+            headers: {
+                ...headers,
+            },
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error('Error removing image from Picsur:', error.response ? error.response.data : error.message);
+        throw error;
+    }
+}

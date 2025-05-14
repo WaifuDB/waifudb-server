@@ -4,7 +4,7 @@ const { getSourceByName, getCharacterById, addCharacterTag, removeCharacterTag, 
 const { validateToken, getUser } = require('../src/auth');
 const { getTagByID, createTag } = require('../src/tags');
 const multer = require('multer');
-const { uploadImageToPicsur } = require('../src/images');
+const { uploadImageToPicsur, removeImageFromPicsur } = require('../src/images');
 var router = express.Router();
 var storage = multer.memoryStorage();
 var upload = multer({ storage: storage });
@@ -243,6 +243,17 @@ router.post('/edit/image', upload.single('image'), async function (req, res, nex
         const uploadResponse = await uploadImageToPicsur(image, image_blob);
         if (uploadResponse && uploadResponse.success && uploadResponse.data && uploadResponse.data.id) {
             const image_id = uploadResponse.data.id;
+
+            const beforeCharacter = await getCharacterById(id);
+            const old_image_id = beforeCharacter.remote_image_id;
+
+            // Remove old image from Picsur
+            try{
+                await removeImageFromPicsur(old_image_id);
+            }catch(err){
+                //Dont really care if it fails, just log it
+                console.warn('Failed to remove old image from Picsur:', err.message);
+            }
 
             // Update character with new image ID
             await query(
