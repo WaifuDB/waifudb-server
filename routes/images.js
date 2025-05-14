@@ -48,13 +48,6 @@ router.post('/new', upload.single('image'), async function (req, res, next) {
             return res.status(400).json({ error: 'No image provided' });
         }
 
-        // Validate the image type
-        const validImageTypes = ['image/jpeg', 'image/png', 'image/gif'];
-        if (!validImageTypes.includes(image.mimetype)) {
-            return res.status(400).json({ error: 'Invalid image type' });
-        }
-
-        
         // // Validate the characters array
         if (!Array.isArray(characters) || characters.length === 0) {
             return res.status(400).json({ error: 'Invalid characters array' });
