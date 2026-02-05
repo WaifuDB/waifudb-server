@@ -99,7 +99,7 @@ async function getCharacterById(id, map_relationships = true){
 module.exports.getCharacterRelationships = getCharacterRelationships;
 async function getCharacterRelationships(characterId){
     const relationships = await query(
-        'SELECT * FROM relationships WHERE from_id = ? OR to_id = ?',
+        `SELECT * FROM relationships WHERE from_id = ? OR to_id = ?`,
         [characterId, characterId]
     );
 
