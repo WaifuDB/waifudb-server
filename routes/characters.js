@@ -458,9 +458,7 @@ router.post('/relationships/update', async function (req, res, next) {
     }
 
     try {
-        let addedRelationships = [];
-        console.log(relationships);
-        for await (const relationship of relationships) {
+        const addedRelationships = await Promise.all(relationships.map(async (relationship) => {
             const created = await createOrUpdateCharacterRelationship(
                 relationship.id,
                 relationship.from_id,
@@ -469,17 +467,19 @@ router.post('/relationships/update', async function (req, res, next) {
                 relationship.reciprocal_relationship_type,
                 relationship.visualize
             );
-            addedRelationships.push({
-                id: relationship.id || created.id,
-            });
-        }
+
+            return {
+                id: relationship.id || created?.id,
+            };
+        }));
 
         //delete relationships that are in the database, but not in the given list
-        const remoteRelationships = await getCharacterRelationships(target_id);
+        const remoteRelationships = (await getCharacterRelationships(target_id)) || [];
         const remoteIds = remoteRelationships.map(relationship => relationship.id);
-        const givenIds = relationships.map(relationship => relationship.id);
+        const givenIds = new Set(relationships.map(relationship => relationship.id).filter(Boolean));
+        const addedIds = new Set(addedRelationships.map(relationship => relationship.id).filter(Boolean));
 
-        const idsToDelete = remoteIds.filter(id => !givenIds.includes(id) && !addedRelationships.some(relationship => relationship.id == id));
+        const idsToDelete = remoteIds.filter(id => !givenIds.has(id) && !addedIds.has(id));
         if (idsToDelete && idsToDelete.length > 0) {
             await query(
                 'DELETE FROM relationships WHERE id IN (' + idsToDelete.map(() => '?').join(', ') + ')',
