@@ -73,6 +73,28 @@ router.get('/get/all', async function (req, res, next) {
     }
 });
 
+router.get('/get/:id/characters', async function (req, res, next) {
+    const { id } = req.params;
+    if (!id) {
+        return res.status(400).json({ error: 'ID is required' });
+    }
+
+    try {
+        const characters = await query(
+            `SELECT c.id, c.name, c.jp_name, c.gender, c.age, c.remote_image_id
+             FROM characters c
+             INNER JOIN character_sources cs ON c.id = cs.character_id
+             WHERE cs.source_id = ?`,
+            [id]
+        );
+
+        res.json(characters || []);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.get('/get/:id', async function (req, res, next) {
     const { id } = req.params;
     if (!id) {
