@@ -5,19 +5,31 @@ var router = express.Router();
 
 router.get('/get/all', async function (req, res, next) {
     try {
-        const sources = await query('SELECT * FROM sources');
+        const [sources, sourceCharacterRows] = await Promise.all([
+            query('SELECT * FROM sources'),
+            query('SELECT cs.source_id, c.* FROM character_sources cs INNER JOIN characters c ON c.id = cs.character_id')
+        ]);
+
         if (!sources) {
             return res.status(404).json({ error: 'Sources not found' });
         }
 
-        // Map the sources to include the characters
-        const sourcesWithCharacters = await Promise.all(sources.map(async (source) => {
-            const characters = await query(
-                'SELECT characters.* FROM characters INNER JOIN character_sources ON characters.id = character_sources.character_id WHERE character_sources.source_id = ?',
-                [source.id]
-            );
-            return { ...source, characters };
-        }));
+        const charactersBySourceId = {};
+        for (const row of sourceCharacterRows) {
+            if (!charactersBySourceId[row.source_id]) {
+                charactersBySourceId[row.source_id] = [];
+            }
+
+            const { source_id, ...character } = row;
+            charactersBySourceId[source_id].push(character);
+        }
+
+        const sourcesWithCharacters = sources.map((source) => {
+            return {
+                ...source,
+                characters: charactersBySourceId[source.id] || [],
+            };
+        });
 
         res.json(sourcesWithCharacters);
     } catch (err) {

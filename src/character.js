@@ -16,14 +16,148 @@ async function getSourceCharacters(id){
         [id]
     );
 
-    let actualCharacters = [];
-    //get them individually to get the relationships etc
-    for await(const character of characters){
-        const characterWithRelationships = await getCharacterById(character.id, true);
-        actualCharacters.push(characterWithRelationships);
+    if (!characters || characters.length === 0) {
+        return [];
     }
 
-    return actualCharacters;
+    const characterIds = characters.map((character) => character.id);
+
+    const [characterSourcesRows, characterImagesRows, relationships] = await Promise.all([
+        query(
+            'SELECT cs.character_id, s.* FROM character_sources cs INNER JOIN sources s ON s.id = cs.source_id WHERE cs.character_id IN (?)',
+            [characterIds]
+        ),
+        query(
+            'SELECT ic.character_id, i.* FROM image_characters ic INNER JOIN images i ON i.id = ic.image_id WHERE ic.character_id IN (?)',
+            [characterIds]
+        ),
+        query(
+            'SELECT * FROM relationships WHERE from_id IN (?) OR to_id IN (?)',
+            [characterIds, characterIds]
+        ),
+    ]);
+
+    const sourcesByCharacterId = {};
+    for (const row of characterSourcesRows) {
+        if (!sourcesByCharacterId[row.character_id]) {
+            sourcesByCharacterId[row.character_id] = [];
+        }
+
+        const { character_id, ...source } = row;
+        sourcesByCharacterId[character_id].push(source);
+    }
+
+    const imagesByCharacterId = {};
+    for (const row of characterImagesRows) {
+        if (!imagesByCharacterId[row.character_id]) {
+            imagesByCharacterId[row.character_id] = [];
+        }
+
+        const { character_id, ...image } = row;
+        imagesByCharacterId[character_id].push(image);
+    }
+
+    const relationshipsByCharacterId = {};
+    const relatedCharacterIds = new Set();
+    for (const characterId of characterIds) {
+        relationshipsByCharacterId[characterId] = [];
+    }
+
+    for (const relationship of relationships || []) {
+        if (relationshipsByCharacterId[relationship.from_id]) {
+            relationshipsByCharacterId[relationship.from_id].push(relationship);
+            if (relationship.to_id !== relationship.from_id) {
+                relatedCharacterIds.add(relationship.to_id);
+            }
+        }
+
+        if (relationshipsByCharacterId[relationship.to_id] && relationship.to_id !== relationship.from_id) {
+            relationshipsByCharacterId[relationship.to_id].push(relationship);
+            relatedCharacterIds.add(relationship.from_id);
+        }
+    }
+
+    const relatedCharacterIdsList = [...relatedCharacterIds];
+    const relatedCharacters = relatedCharacterIdsList.length > 0
+        ? await query('SELECT * FROM characters WHERE id IN (?)', [relatedCharacterIdsList])
+        : [];
+
+    let relatedSourcesRows = [];
+    let relatedImagesRows = [];
+    if (relatedCharacterIdsList.length > 0) {
+        [relatedSourcesRows, relatedImagesRows] = await Promise.all([
+            query(
+                'SELECT cs.character_id, s.* FROM character_sources cs INNER JOIN sources s ON s.id = cs.source_id WHERE cs.character_id IN (?)',
+                [relatedCharacterIdsList]
+            ),
+            query(
+                'SELECT ic.character_id, i.* FROM image_characters ic INNER JOIN images i ON i.id = ic.image_id WHERE ic.character_id IN (?)',
+                [relatedCharacterIdsList]
+            ),
+        ]);
+    }
+
+    const relatedSourcesByCharacterId = {};
+    for (const row of relatedSourcesRows) {
+        if (!relatedSourcesByCharacterId[row.character_id]) {
+            relatedSourcesByCharacterId[row.character_id] = [];
+        }
+
+        const { character_id, ...source } = row;
+        relatedSourcesByCharacterId[character_id].push(source);
+    }
+
+    const relatedImagesByCharacterId = {};
+    for (const row of relatedImagesRows) {
+        if (!relatedImagesByCharacterId[row.character_id]) {
+            relatedImagesByCharacterId[row.character_id] = [];
+        }
+
+        const { character_id, ...image } = row;
+        relatedImagesByCharacterId[character_id].push(image);
+    }
+
+    const relatedCharacterCache = {};
+    for (const relatedCharacter of relatedCharacters) {
+        relatedCharacterCache[relatedCharacter.id] = {
+            ...relatedCharacter,
+            sources: relatedSourcesByCharacterId[relatedCharacter.id] || [],
+            images: relatedImagesByCharacterId[relatedCharacter.id] || [],
+        };
+    }
+
+    return characters.map((character) => {
+        const mappedRelationships = (relationshipsByCharacterId[character.id] || []).map((relationship) => {
+            let mappedRelationship = relationship;
+
+            if (relationship.to_id == character.id) {
+                mappedRelationship = {
+                    ...relationship,
+                    from_id: relationship.to_id,
+                    to_id: relationship.from_id,
+                    relationship_type: relationship.reciprocal_relationship_type,
+                    reciprocal_relationship_type: relationship.relationship_type,
+                };
+            }
+
+            const otherCharacterId = mappedRelationship.to_id;
+            if (relatedCharacterCache[otherCharacterId]) {
+                mappedRelationship = {
+                    ...mappedRelationship,
+                    character: relatedCharacterCache[otherCharacterId],
+                };
+            }
+
+            return mappedRelationship;
+        });
+
+        return {
+            ...character,
+            sources: sourcesByCharacterId[character.id] || [],
+            relationships: mappedRelationships,
+            images: imagesByCharacterId[character.id] || [],
+        };
+    });
 }
 
 module.exports.getSourceById = getSourceById;
