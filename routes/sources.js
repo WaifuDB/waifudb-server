@@ -3,23 +3,29 @@ const { getSourceById } = require('../src/character');
 const { query } = require('../src/db');
 var router = express.Router();
 
+async function getCompactSources() {
+    const sources = await query(
+        `SELECT s.*, COUNT(cs.character_id) AS character_count
+         FROM sources s
+         LEFT JOIN character_sources cs ON cs.source_id = s.id
+         GROUP BY s.id`
+    );
+
+    return sources.map((source) => ({
+        ...source,
+        character_count: Number(source.character_count || 0),
+    }));
+}
+
 router.get('/get/all/compact', async function (req, res, next) {
     try {
-        const sources = await query(
-            `SELECT s.*, COUNT(cs.character_id) AS character_count
-             FROM sources s
-             LEFT JOIN character_sources cs ON cs.source_id = s.id
-             GROUP BY s.id`
-        );
+        const sources = await getCompactSources();
 
         if (!sources) {
             return res.status(404).json({ error: 'Sources not found' });
         }
 
-        res.json(sources.map((source) => ({
-            ...source,
-            character_count: Number(source.character_count || 0),
-        })));
+        res.json(sources);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
@@ -28,6 +34,12 @@ router.get('/get/all/compact', async function (req, res, next) {
 
 router.get('/get/all', async function (req, res, next) {
     try {
+        const includeCharacters = ['1', 'true', 'yes'].includes(String(req.query.include_characters || '').toLowerCase());
+        if (!includeCharacters) {
+            const compactSources = await getCompactSources();
+            return res.json(compactSources);
+        }
+
         const [sources, sourceCharacterRows] = await Promise.all([
             query('SELECT * FROM sources'),
             query('SELECT cs.source_id, c.* FROM character_sources cs INNER JOIN characters c ON c.id = cs.character_id')

@@ -276,7 +276,27 @@ router.post('/edit/image', upload.single('image'), async function (req, res, nex
 
 router.get('/get/all', async function (req, res, next) {
     try {
-        const characters = await getCharacters();
+        const queryOptions = {};
+
+        if (req.query.limit !== undefined) {
+            const limit = Number.parseInt(req.query.limit, 10);
+            if (Number.isNaN(limit) || limit <= 0) {
+                return res.status(400).json({ error: 'limit must be a positive integer' });
+            }
+
+            queryOptions.limit = Math.min(limit, 500);
+        }
+
+        if (req.query.offset !== undefined) {
+            const offset = Number.parseInt(req.query.offset, 10);
+            if (Number.isNaN(offset) || offset < 0) {
+                return res.status(400).json({ error: 'offset must be a non-negative integer' });
+            }
+
+            queryOptions.offset = offset;
+        }
+
+        const characters = await getCharacters(queryOptions);
         res.json(characters);
     } catch (err) {
         console.error(err);

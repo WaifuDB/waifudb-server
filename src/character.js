@@ -193,10 +193,21 @@ async function getCharacterSources(characterId){
 }
 
 module.exports.getCharacters = getCharacters;
-async function getCharacters(){
-    const characters = await query(
-        'SELECT * FROM characters'
-    );
+async function getCharacters(options = {}){
+    const {
+        limit = null,
+        offset = 0,
+    } = options;
+
+    let sql = 'SELECT * FROM characters';
+    const params = [];
+
+    if (Number.isInteger(limit) && limit > 0) {
+        sql += ' LIMIT ? OFFSET ?';
+        params.push(limit, Math.max(0, offset));
+    }
+
+    const characters = await query(sql, params);
 
     if (characters.length === 0) {
         return null;
