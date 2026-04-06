@@ -218,14 +218,22 @@ async function getCharacterById(id, map_relationships = true){
 
     let _character = character[0];
 
-    // const characterSources = await getCharacterSources(id);
-    // const characterWithSources = character[0];
-    // characterWithSources.sources = characterSources; //map sources to character object
-    _character.sources = (await getCharacterSources(id)) || [];
-    if(map_relationships){
-        _character.relationships = (await getCharacterRelationships(id)) || [];
+    const pendingQueries = [
+        getCharacterSources(id),
+        getCharacterImages(id),
+    ];
+
+    if (map_relationships) {
+        pendingQueries.push(getCharacterRelationships(id));
     }
-    _character.images = (await getCharacterImages(id)) || [];
+
+    const [sources, images, relationships] = await Promise.all(pendingQueries);
+
+    _character.sources = sources || [];
+    _character.images = images || [];
+    if (map_relationships) {
+        _character.relationships = relationships || [];
+    }
 
     return character[0];
 }
@@ -254,25 +262,62 @@ async function getCharacterRelationships(characterId){
         return relationship;
     })
 
-    let characterCache = {};
+    const relatedCharacterIds = [...new Set(
+        mappedRelationships
+            .flatMap((relationship) => [relationship.from_id, relationship.to_id])
+            .filter((id) => id != characterId)
+    )];
 
-    for await(const relationship of mappedRelationships){
-        if(!characterCache[relationship.from_id]){
-            if(relationship.from_id != characterId){
-                const character = await getCharacterById(relationship.from_id, false);
-                characterCache[relationship.from_id] = character;
-            }
+    const relatedCharacters = relatedCharacterIds.length > 0
+        ? await query('SELECT * FROM characters WHERE id IN (?)', [relatedCharacterIds])
+        : [];
+
+    let relatedSourcesRows = [];
+    let relatedImagesRows = [];
+    if (relatedCharacterIds.length > 0) {
+        [relatedSourcesRows, relatedImagesRows] = await Promise.all([
+            query(
+                'SELECT cs.character_id, s.* FROM character_sources cs INNER JOIN sources s ON s.id = cs.source_id WHERE cs.character_id IN (?)',
+                [relatedCharacterIds]
+            ),
+            query(
+                'SELECT ic.character_id, i.* FROM image_characters ic INNER JOIN images i ON i.id = ic.image_id WHERE ic.character_id IN (?)',
+                [relatedCharacterIds]
+            ),
+        ]);
+    }
+
+    const relatedSourcesByCharacterId = {};
+    for (const row of relatedSourcesRows) {
+        if (!relatedSourcesByCharacterId[row.character_id]) {
+            relatedSourcesByCharacterId[row.character_id] = [];
         }
-        if(!characterCache[relationship.to_id]){
-            if(relationship.to_id != characterId){
-                const character = await getCharacterById(relationship.to_id, false);
-                characterCache[relationship.to_id] = character;
-            }
+
+        const { character_id, ...source } = row;
+        relatedSourcesByCharacterId[character_id].push(source);
+    }
+
+    const relatedImagesByCharacterId = {};
+    for (const row of relatedImagesRows) {
+        if (!relatedImagesByCharacterId[row.character_id]) {
+            relatedImagesByCharacterId[row.character_id] = [];
         }
+
+        const { character_id, ...image } = row;
+        relatedImagesByCharacterId[character_id].push(image);
+    }
+
+    const characterCache = {};
+    for (const relatedCharacter of relatedCharacters) {
+        characterCache[relatedCharacter.id] = {
+            ...relatedCharacter,
+            sources: relatedSourcesByCharacterId[relatedCharacter.id] || [],
+            images: relatedImagesByCharacterId[relatedCharacter.id] || [],
+        };
     }
 
     //add character data to relationships
-    for await(const relationship of mappedRelationships){
+    for (const relationship of mappedRelationships){
         let id = null;
         if(relationship.from_id == characterId){
             id = relationship.to_id;
