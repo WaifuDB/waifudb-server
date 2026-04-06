@@ -17,10 +17,10 @@ async function addCharactersToImage(imageId, characterIds) {
             return { error: 'Some characters not found' };
         }
 
-        // Add characters to the image
-        for (const characterId of characterIds) {
-            await query('INSERT INTO image_characters (image_id, character_id) VALUES (?, ?)', [imageId, characterId]);
-        }
+        // Add characters to the image in one statement to reduce DB round-trips.
+        const placeholders = characterIds.map(() => '(?, ?)').join(', ');
+        const params = characterIds.flatMap((characterId) => [imageId, characterId]);
+        await query(`INSERT INTO image_characters (image_id, character_id) VALUES ${placeholders}`, params);
 
         return { message: 'Characters added to image successfully' };
     } catch (err) {
@@ -31,10 +31,12 @@ async function addCharactersToImage(imageId, characterIds) {
 module.exports.removeCharactersFromImage = removeCharactersFromImage
 async function removeCharactersFromImage(imageId, characterIds) {
     try {
-        //No need to check anything, just remove the image_characters entry. If that doesn't exist, we throw anyways.
-        for (const characterId of characterIds) {
-            await query('DELETE FROM image_characters WHERE image_id = ? AND character_id = ?', [imageId, characterId]);
+        //No need to check anything, just remove matching entries in one statement.
+        if (!Array.isArray(characterIds) || characterIds.length === 0) {
+            return { message: 'Characters removed from image successfully' };
         }
+
+        await query('DELETE FROM image_characters WHERE image_id = ? AND character_id IN (?)', [imageId, characterIds]);
 
         return { message: 'Characters removed from image successfully' };
     } catch (err) {

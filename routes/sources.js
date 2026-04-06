@@ -102,7 +102,8 @@ router.get('/get/:id', async function (req, res, next) {
     }
 
     try {
-        const source = await getSourceById(id);
+        const includeRelationshipCharacters = !['0', 'false', 'no'].includes(String(req.query.include_relationship_characters || '').toLowerCase());
+        const source = await getSourceById(id, { includeRelationshipCharacters });
         if (!source) {
             return res.status(404).json({ error: 'Source not found' });
         }

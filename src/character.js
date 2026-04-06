@@ -10,7 +10,7 @@ async function getSourceByName(name){
     return source[0];
 }
 
-async function getSourceCharacters(id){
+async function getSourceCharacters(id, includeRelationshipCharacters = true){
     const characters = await query(
         'SELECT characters.* FROM characters INNER JOIN character_sources ON characters.id = character_sources.character_id WHERE character_sources.source_id = ?',
         [id]
@@ -32,8 +32,10 @@ async function getSourceCharacters(id){
             [characterIds]
         ),
         query(
-            'SELECT * FROM relationships WHERE from_id IN (?) OR to_id IN (?)',
-            [characterIds, characterIds]
+            `SELECT * FROM relationships WHERE from_id IN (?)
+             UNION ALL
+             SELECT * FROM relationships WHERE to_id IN (?) AND from_id NOT IN (?)`,
+            [characterIds, characterIds, characterIds]
         ),
     ]);
 
@@ -77,14 +79,14 @@ async function getSourceCharacters(id){
         }
     }
 
-    const relatedCharacterIdsList = [...relatedCharacterIds];
-    const relatedCharacters = relatedCharacterIdsList.length > 0
+    const relatedCharacterIdsList = includeRelationshipCharacters ? [...relatedCharacterIds] : [];
+    const relatedCharacters = includeRelationshipCharacters && relatedCharacterIdsList.length > 0
         ? await query('SELECT * FROM characters WHERE id IN (?)', [relatedCharacterIdsList])
         : [];
 
     let relatedSourcesRows = [];
     let relatedImagesRows = [];
-    if (relatedCharacterIdsList.length > 0) {
+    if (includeRelationshipCharacters && relatedCharacterIdsList.length > 0) {
         [relatedSourcesRows, relatedImagesRows] = await Promise.all([
             query(
                 'SELECT cs.character_id, s.* FROM character_sources cs INNER JOIN sources s ON s.id = cs.source_id WHERE cs.character_id IN (?)',
@@ -141,7 +143,7 @@ async function getSourceCharacters(id){
             }
 
             const otherCharacterId = mappedRelationship.to_id;
-            if (relatedCharacterCache[otherCharacterId]) {
+            if (includeRelationshipCharacters && relatedCharacterCache[otherCharacterId]) {
                 mappedRelationship = {
                     ...mappedRelationship,
                     character: relatedCharacterCache[otherCharacterId],
@@ -161,7 +163,11 @@ async function getSourceCharacters(id){
 }
 
 module.exports.getSourceById = getSourceById;
-async function getSourceById(id){
+async function getSourceById(id, options = {}){
+    const {
+        includeRelationshipCharacters = true,
+    } = options;
+
     const source = await query(
         'SELECT * FROM sources WHERE id = ?',
         [id]
@@ -171,7 +177,7 @@ async function getSourceById(id){
         return null;
     }
 
-    const sourceCharacters = await getSourceCharacters(id);
+    const sourceCharacters = await getSourceCharacters(id, includeRelationshipCharacters);
     const sourceWithCharacters = source[0];
     sourceWithCharacters.characters = sourceCharacters; //map characters to source object
 
